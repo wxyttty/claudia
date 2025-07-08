@@ -1,0 +1,122 @@
+name: Nightly Build and Release
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # 每天UTC时间2点自动触发（可调整）
+  workflow_dispatch:
+
+jobs:
+  sync-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork default branch
+        uses: actions/checkout@v4
+
+      - name: Set up Git config
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote and fetch
+        run: |
+          git remote add upstream https://github.com/getAsterisk/claudia.git
+          git fetch upstream
+
+      - name: Merge upstream changes
+        run: |
+          git checkout main
+          git merge upstream/main --allow-unrelated-histories --no-edit || true
+
+      - name: Push changes to fork
+        run: |
+          git push origin main
+
+  build-macos-arm64:
+    needs: sync-upstream
+    runs-on: macos-14
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions/setup-rust@v1
+        with:
+          rust-version: '1.70.0'
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Build Claudia app (macOS arm64)
+        run: bun run tauri build --target aarch64-apple-darwin
+
+      - name: Upload macOS arm64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claudia-macos-arm64
+          path: src-tauri/target/aarch64-apple-darwin/release/bundle/
+
+  build-windows-msi:
+    needs: sync-upstream
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions/setup-rust@v1
+        with:
+          rust-version: '1.70.0'
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Build Claudia app (Windows)
+        run: bun run tauri build
+
+      - name: Upload Windows MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claudia-windows-msi
+          path: src-tauri/target/release/bundle/msi/
+
+  release:
+    needs: [build-macos-arm64, build-windows-msi]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download macOS arm64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: claudia-macos-arm64
+          path: macos/
+
+      - name: Download Windows MSI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: claudia-windows-msi
+          path: windows-msi/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly-${{ github.run_number }}
+          name: "Nightly Build ${{ github.run_number }}"
+          body: |
+            自动化发布夜间构建，仅包含 macOS (Apple Silicon) 和 Windows (MSI) 安装包。
+            具体构建方式和使用请见 README。
+          prerelease: true
+          draft: false
+          files: |
+            macos/**/*.dmg
+            windows-msi/**/*.msi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
