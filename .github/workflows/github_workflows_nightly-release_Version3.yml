@@ -60,37 +60,9 @@ jobs:
           name: claudia-macos-arm64
           path: src-tauri/target/aarch64-apple-darwin/release/bundle/
 
-  build-windows-msi:
-    needs: sync-upstream
-    runs-on: windows-latest
-    steps:
-      - name: Checkout source code
-        uses: actions/checkout@v4
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install frontend dependencies
-        run: bun install
-
-      - name: Build Claudia app (Windows)
-        run: bun run tauri build
-
-      - name: Upload Windows MSI artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: claudia-windows-msi
-          path: src-tauri/target/release/bundle/msi/
 
   release:
-    needs: [build-macos-arm64, build-windows-msi]
+    needs: [build-macos-arm64]
     runs-on: ubuntu-latest
     steps:
       - name: Download macOS arm64 artifact
@@ -99,11 +71,6 @@ jobs:
           name: claudia-macos-arm64
           path: macos/
 
-      - name: Download Windows MSI artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: claudia-windows-msi
-          path: windows-msi/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -117,6 +84,5 @@ jobs:
           draft: false
           files: |
             macos/**/*.dmg
-            windows-msi/**/*.msi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
